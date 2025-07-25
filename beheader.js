@@ -66,8 +66,8 @@ try {
   ftypBuffer[12] = 32; // First image bit depth
   ftypBuffer.set(numberTo4bLE(pngFile.size), 14); // Image data size
 
-  // Re-encode input video to MP4 (if it isn't already)
-  await $`ffmpeg -i "${video}" "${tmp + "0.mp4"}"`.quiet();
+  // Re-encode input video to a highly normalized MP4
+  await $`ffmpeg -i "${video}" -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4 "${tmp + "0.mp4"}"`.quiet();
 
   // The ftyp atom is not yet finished, we replace it only to measure offsets
   await Bun.write(atomFile, ftypBuffer);
@@ -115,6 +115,9 @@ try {
     if (!path) continue;
     await $`cat "${path}" >> "${output}"`.quiet();
   }
+
+  // Fix ZIP offsets (if applicable) to improve compatibility
+  await $`zip -A "${output}"`.quiet();
 
 } catch (e) {
 

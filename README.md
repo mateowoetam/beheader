@@ -2,7 +2,7 @@
 Polyglot generator for media files.
 
 ### Dependencies
-This project requires the [Bun JavaScript runtime](https://bun.sh/), and is built for Linux systems. You'll need `ffmpeg` and `imagemagick` in your `PATH`, as well as an executable [mp4edit](https://www.bento4.com/) binary in your working directory.
+This project requires the [Bun JavaScript runtime](https://bun.sh/), and is built for Linux systems. You'll need `ffmpeg`, `imagemagick`, and `zip` in your `PATH`, as well as an executable [mp4edit](https://www.bento4.com/) binary in your working directory.
 
 ### Usage
 With all dependencies set up, you should be able to run:
@@ -13,7 +13,7 @@ $ bun run beheader.js <output> <image> <video> [html] [zip, pdf, jar, apk, ...]
 - `image` is a path to the image to include. Note that regardless of what you provide, it will be converted to a PNG using ImageMagick.
 - `video` is a path to the video file to include. This will be transcoded to MP4 using FFmpeg.
 - `html` is an *optional* path to an HTML document. The code will be wrapped to prevent rendering garbage.
-- Further files will simply be appended to the output. Most notably, this works well for ZIP-like archives, PDF files, and some scripts.
+- Further files will simply be appended to the output. Most notably, this works well for ZIP-like archives, PDF files, and some scripts. For ZIP archives, offsets will be adjusted to improve compatibility.
 
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
 - `.ico` displays the input image;
