@@ -49,7 +49,7 @@ await $`convert "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "$
 
 const pngFile = Bun.file(tmp + ".png");
 const atomFile = Bun.file(tmp + ".atom");
-const htmlFile = Bun.file(html);
+const htmlFile = html && Bun.file(html);
 
 const ftypBuffer = new Uint8Array(256);
 const encoder = new TextEncoder();

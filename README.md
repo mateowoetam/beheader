@@ -16,6 +16,8 @@ $ bun run beheader.js <output> <image> <video> [html] [zip, pdf, jar, apk, ...]
 
 Further files will simply be appended to the output. Most notably, this works well for ZIP-like archives, PDF files, and some scripts. For ZIP archives, offsets will be adjusted to improve compatibility. **ZIP-like files should be included last**, to prevent the offset adjustment from breaking other appendables.
 
+To avoid including an optional file, omit the argument or use an empty string (`""`) in its place.
+
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
 - `.ico` displays the input image;
 - `.mp4` plays the input video;
