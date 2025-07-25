@@ -3,7 +3,7 @@ const { $ } = require("bun");
 const [ output, image, video, html ] = process.argv.slice(2);
 
 if (!output || !image || !video) {
-  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [zip, pdf, jar, apk, ...]");
+  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [pdf, zip, jar, apk, ...]");
   process.exit(1);
 }
 
