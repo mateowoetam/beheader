@@ -109,12 +109,14 @@ try {
 
   // Add list of supported brands to help convince stubborn decoders
   ftypBuffer.set(encoder.encode("__isomiso2avc1mp41"), 22);
+  // Create an HTML comment to help with filtering out garbage
+  ftypBuffer.set(encoder.encode("<!--"), 40);
 
   if (pdf) {
     const pdfBuffer = await pdfFile.bytes();
     const mp4Size = Bun.file(tmp + "2.mp4").size;
     // Copy PDF header from input file
-    ftypBuffer.set(pdfBuffer.slice(0, 9), 40);
+    ftypBuffer.set(pdfBuffer.slice(0, 9), 44);
     /**
      * Create a PDF object spanning the whole rest of the MP4.
      *
@@ -133,10 +135,10 @@ try {
     // know that we've subtracted the correct amount.
     do {
       offset --;
-      objString = `\n1 0 obj\n<</Length ${mp4Size - 49 - offset}>>\nstream\n`;
+      objString = `\n1 0 obj\n<</Length ${mp4Size - 53 - offset}>>\nstream\n`;
     } while (offset !== objString.length);
     // Write the string into the dead space of the ftyp atom
-    ftypBuffer.set(encoder.encode(objString), 49);
+    ftypBuffer.set(encoder.encode(objString), 53);
   }
 
   // Now the ftyp atom is ready, replace it and write the output file
