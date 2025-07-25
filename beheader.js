@@ -44,7 +44,7 @@ function findSubArrayIndex (array, subArray) {
 
 const tmp = Math.random().toString(36).slice(2);
 
-// Convert input image to PNG with RLE, strip all metadata
+// Convert input image to 32 bpp PNG, strip all metadata
 await $`convert "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "${tmp + ".png"}"`;
 
 const pngFile = Bun.file(tmp + ".png");
