@@ -1,9 +1,10 @@
 const { $ } = require("bun");
+const fs = require("fs/promises");
 
-const [ output, image, video, html ] = process.argv.slice(2);
+const [ output, image, video, html, pdf ] = process.argv.slice(2);
 
 if (!output || !image || !video) {
-  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [pdf, zip, jar, apk, ...]");
+  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...]");
   process.exit(1);
 }
 
@@ -50,6 +51,7 @@ await $`convert "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "$
 const pngFile = Bun.file(tmp + ".png");
 const atomFile = Bun.file(tmp + ".atom");
 const htmlFile = html && Bun.file(html);
+const pdfFile = pdf && Bun.file(pdf);
 
 const ftypBuffer = new Uint8Array(256);
 const encoder = new TextEncoder();
@@ -105,9 +107,48 @@ try {
   // It seems that, at least for ffmpeg, the name isn't actually required
   ftypBuffer.set([1, 0, 0, 0], 4);
 
+  if (pdf) {
+    const pdfBuffer = await pdfFile.bytes();
+    const mp4Size = Bun.file(tmp + "2.mp4").size;
+    // Copy PDF header from input file
+    ftypBuffer.set(pdfBuffer.slice(0, 9), 22);
+    /**
+     * Create a PDF object spanning the whole rest of the MP4.
+     *
+     * Since we're replacing data in an existing fixed-size buffer,
+     * and the Length property is provided in ASCII, the value of
+     * the number itself might shift the length.
+     *
+     * This routine dynamically adjusts the object definition string
+     * until the number matches the actual length of the file.
+     */
+    let objString;
+    // Start by assuming that the string contains the full file size
+    let offset = 30 + mp4Size.toString().length;
+    // Each iteration, decrement the offset and update the object string.
+    // This is repeated until offset == string.length, at which point we
+    // know that we've subtracted the correct amount.
+    do {
+      offset --;
+      objString = `\n1 0 obj\n<</Length ${mp4Size - 31 - offset}>>\nstream\n`;
+    } while (offset !== objString.length);
+    // Write the string into the dead space of the ftyp atom
+    ftypBuffer.set(encoder.encode(objString), 31);
+  }
+
   // Now the ftyp atom is ready, replace it and write the output file
   await Bun.write(atomFile, ftypBuffer);
   await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
+
+  if (pdf) {
+    // Second PDF pass - close the object and add the real PDF file
+    const objectTerminator = encoder.encode("\nendstream\nendobj\n");
+    const pdfBuffer = new Uint8Array(pdfFile.size + objectTerminator.length);
+    pdfBuffer.set(objectTerminator);
+    pdfBuffer.set(await pdfFile.bytes(), objectTerminator.length);
+    // Append this buffer to the output file
+    await fs.appendFile(output, pdfBuffer);
+  }
 
   // Append any other files found on the command line
   const appendables = process.argv.slice(6);
