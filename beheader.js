@@ -1,9 +1,9 @@
 const { $ } = require("bun");
 
-const [ output, image, video, html, zip ] = process.argv.slice(2);
+const [ output, image, video, html ] = process.argv.slice(2);
 
 if (!output || !image || !video) {
-  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [zip]");
+  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [zip, pdf, jar, apk, ...]");
   process.exit(1);
 }
 
@@ -109,9 +109,11 @@ try {
   await Bun.write(atomFile, ftypBuffer);
   await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
 
-  if (zip) {
-    // If a ZIP archive was provided, just append it to the end
-    await $`cat "${zip}" >> "${output}"`.quiet();
+  // Append any other files found on the command line
+  const appendables = process.argv.slice(6);
+  for (const path of appendables) {
+    if (!path) continue;
+    await $`cat "${path}" >> "${output}"`.quiet();
   }
 
 } catch (e) {
