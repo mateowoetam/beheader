@@ -49,6 +49,7 @@ await $`convert "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "$
 
 const pngFile = Bun.file(tmp + ".png");
 const atomFile = Bun.file(tmp + ".atom");
+const htmlFile = Bun.file(html);
 
 const ftypBuffer = new Uint8Array(256);
 const encoder = new TextEncoder();
@@ -69,14 +70,23 @@ await $`ffmpeg -i "${video}" "${tmp + "0.mp4"}"`.quiet();
 await Bun.write(atomFile, ftypBuffer);
 await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "0.mp4"}" "${tmp + "1.mp4"}"`;
 
+// Wrap the input HTML document (if any) to avoid rendering surrounding garbage
+const htmlString = html ? `--><style>body{font-size:0}</style><div style=font-size:initial>${await htmlFile.text()}</div><!--` : "";
+
+// Create a buffer for the PNG file
+// If applicable, we'll append HTML to this same atom
+const pngFileBuffer = new Uint8Array(pngFile.size + htmlString.length);
+pngFileBuffer.set(await pngFile.bytes());
+if (html) pngFileBuffer.set(encoder.encode(htmlString), pngFile.size);
+
 // Create a "skip" atom to store the PNG data
 const skipBufferHead = new Uint8Array(8);
-skipBufferHead.set(numberTo4bBE(pngFile.size + 8), 0);
+skipBufferHead.set(numberTo4bBE(pngFileBuffer.length + 8), 0);
 skipBufferHead.set(encoder.encode("skip"), 4);
 
-const skipBuffer = new Uint8Array(pngFile.size + 8);
+const skipBuffer = new Uint8Array(pngFileBuffer.length + 8);
 skipBuffer.set(skipBufferHead, 0);
-skipBuffer.set(await pngFile.bytes(), 8);
+skipBuffer.set(pngFileBuffer, 8);
 
 // Insert the skip atom into the output file to get its final offset
 await Bun.write(atomFile, skipBuffer);
@@ -91,17 +101,6 @@ ftypBuffer.set(numberTo4bLE(pngOffset), 18);
 // Set ICO image count to 1 and clear ftyp atom name
 // It seems that, at least for ffmpeg, the name isn't actually required
 ftypBuffer.set([1, 0, 0, 0], 4);
-
-if (html) {
-  // Use remaining 256 - 22 = 234 bytes to store HTML
-  // 52 of those are used to filter out surrounding garbage
-  const htmlString = `><a style=font-size:initial>${await Bun.file(html).text()}<style>body{font-size:0}`;
-  if (htmlString.length > 234) {
-    console.log(`HTML too long, skipping... (${htmlString.length - 52} > 182)`);
-  } else {
-    ftypBuffer.set(encoder.encode(htmlString), 22);
-  }
-}
 
 // Now the ftyp atom is ready, replace it and write the output file
 await Bun.write(atomFile, ftypBuffer);

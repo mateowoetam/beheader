@@ -12,7 +12,7 @@ $ bun run beheader.js <output> <image> <video> [html] [zip]
 - `output` is the name of the output polyglot file.
 - `image` is a path to the image to include. Note that regardless of what you provide, it will be converted to a PNG using ImageMagick.
 - `video` is a path to the video file to include. This will be transcoded to MP4 using FFmpeg.
-- `html` is an *optional* path to an HTML document. If this file exceeds 182 bytes, it will be skipped. The code will be wrapped to prevent rendering garbage.
+- `html` is an *optional* path to an HTML document. The code will be wrapped to prevent rendering garbage.
 - `zip` is an *optional* path to a ZIP archive. This simply gets appended to the end of the file without further parsing, so a JAR or APK file works, too.
 
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
