@@ -1,7 +1,23 @@
 const { $ } = require("bun");
 const fs = require("fs/promises");
 
-const [ output, image, video, html, pdf ] = process.argv.slice(2);
+// Parse command line by cloning argv and removing flags first
+const argv = structuredClone(process.argv);
+
+let extra = "";
+
+// Search for supported flags, handle them, and remove them from argv clone
+for (let i = argv.length - 1; i >= 0; i --) {
+  let match = true;
+  switch (argv[i]) {
+    case "--extra": extra = await Bun.file(argv[i + 1]).text(); break;
+    default: match = false; break;
+  }
+  if (match) argv.splice(i, 2);
+}
+
+// All remaining parameters are positional
+const [ output, image, video, html, pdf ] = argv.slice(2);
 
 if (!output || !image || !video) {
   console.log("Usage: bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...]");
@@ -111,12 +127,14 @@ try {
   ftypBuffer.set(encoder.encode("__isomiso2avc1mp41"), 22);
   // Create an HTML comment to help with filtering out garbage
   ftypBuffer.set(encoder.encode("<!--"), 40);
+  // Add any user-provided early header data
+  ftypBuffer.set(encoder.encode(extra), 44);
 
   if (pdf) {
     const pdfBuffer = await pdfFile.bytes();
     const mp4Size = Bun.file(tmp + "2.mp4").size;
     // Copy PDF header from input file
-    ftypBuffer.set(pdfBuffer.slice(0, 9), 44);
+    ftypBuffer.set(pdfBuffer.slice(0, 9), 44 + extra.length);
     /**
      * Create a PDF object spanning the whole rest of the MP4.
      *
@@ -135,10 +153,10 @@ try {
     // know that we've subtracted the correct amount.
     do {
       offset --;
-      objString = `\n1 0 obj\n<</Length ${mp4Size - 53 - offset}>>\nstream\n`;
+      objString = `\n1 0 obj\n<</Length ${mp4Size - 53 - extra.length - offset}>>\nstream\n`;
     } while (offset !== objString.length);
     // Write the string into the dead space of the ftyp atom
-    ftypBuffer.set(encoder.encode(objString), 53);
+    ftypBuffer.set(encoder.encode(objString), 53 + extra.length);
   }
 
   // Now the ftyp atom is ready, replace it and write the output file
@@ -156,7 +174,7 @@ try {
   }
 
   // Append any other files found on the command line
-  const appendables = process.argv.slice(6);
+  const appendables = argv.slice(6);
   for (const path of appendables) {
     if (!path) continue;
     await $`cat "${path}" >> "${output}"`.quiet();

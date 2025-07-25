@@ -7,7 +7,7 @@ This project requires the [Bun JavaScript runtime](https://bun.sh/), and is buil
 ### Usage
 With all dependencies set up, you should be able to run:
 ```
-$ bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...]
+$ bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...] [--extra bin]
 ```
 - `output` is the name of the output polyglot file.
 - `image` is a path to the image to include. Note that regardless of what you provide, it will be converted to a PNG using ImageMagick.
@@ -18,6 +18,8 @@ $ bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...]
 Further files will simply be appended to the output. Most notably, this works well for ZIP-like archives and some scripts. For ZIP archives, offsets will be adjusted to improve compatibility. **ZIP-like files should be included last**, to prevent the offset adjustment from breaking other appendables.
 
 To avoid including an optional file, omit the argument or use an empty string (`""`) in its place.
+
+The `--extra` flag is not positional. It can be used to add a short file (about 200 bytes or less, depending on input) to the first MP4 atom near the start of the output file. **The size of this data is not regulated.** Overflowing the atom will break the video component of the output.
 
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
 - `.ico` displays the input image;
