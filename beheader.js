@@ -103,15 +103,18 @@ try {
 
   // Set PNG data offset for first ICO image
   ftypBuffer.set(numberTo4bLE(pngOffset), 18);
-  // Set ICO image count to 1 and clear ftyp atom name
-  // It seems that, at least for ffmpeg, the name isn't actually required
+  // Set ICO image count to 1 and clear atom name
+  // Luckily, many players just assume that ftyp is the first atom
   ftypBuffer.set([1, 0, 0, 0], 4);
+
+  // Add list of supported brands to help convince stubborn decoders
+  ftypBuffer.set(encoder.encode("__isomiso2avc1mp41"), 22);
 
   if (pdf) {
     const pdfBuffer = await pdfFile.bytes();
     const mp4Size = Bun.file(tmp + "2.mp4").size;
     // Copy PDF header from input file
-    ftypBuffer.set(pdfBuffer.slice(0, 9), 22);
+    ftypBuffer.set(pdfBuffer.slice(0, 9), 40);
     /**
      * Create a PDF object spanning the whole rest of the MP4.
      *
@@ -130,10 +133,10 @@ try {
     // know that we've subtracted the correct amount.
     do {
       offset --;
-      objString = `\n1 0 obj\n<</Length ${mp4Size - 31 - offset}>>\nstream\n`;
+      objString = `\n1 0 obj\n<</Length ${mp4Size - 49 - offset}>>\nstream\n`;
     } while (offset !== objString.length);
     // Write the string into the dead space of the ftyp atom
-    ftypBuffer.set(encoder.encode(objString), 31);
+    ftypBuffer.set(encoder.encode(objString), 49);
   }
 
   // Now the ftyp atom is ready, replace it and write the output file
