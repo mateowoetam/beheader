@@ -54,66 +54,81 @@ const htmlFile = Bun.file(html);
 const ftypBuffer = new Uint8Array(256);
 const encoder = new TextEncoder();
 
-ftypBuffer[2] = 1; // ICO signature | 256 byte atom size
+// Wrap in try/catch/finally to clean up temporary files on error
+try {
 
-// Write the MP4 "ftyp" atom name
-// This seems unnecessary, we do this just to not confuse mp4edit
-ftypBuffer.set(encoder.encode("ftyp"), 4);
+  ftypBuffer[2] = 1; // ICO signature | 256 byte atom size
 
-ftypBuffer[12] = 32; // First image bit depth
-ftypBuffer.set(numberTo4bLE(pngFile.size), 14); // Image data size
+  // Write the MP4 "ftyp" atom name
+  // This seems unnecessary, we do this just to not confuse mp4edit
+  ftypBuffer.set(encoder.encode("ftyp"), 4);
 
-// Re-encode input video to MP4 (if it isn't already)
-await $`ffmpeg -i "${video}" "${tmp + "0.mp4"}"`.quiet();
+  ftypBuffer[12] = 32; // First image bit depth
+  ftypBuffer.set(numberTo4bLE(pngFile.size), 14); // Image data size
 
-// The ftyp atom is not yet finished, we replace it only to measure offsets
-await Bun.write(atomFile, ftypBuffer);
-await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "0.mp4"}" "${tmp + "1.mp4"}"`;
+  // Re-encode input video to MP4 (if it isn't already)
+  await $`ffmpeg -i "${video}" "${tmp + "0.mp4"}"`.quiet();
 
-// Wrap the input HTML document (if any) to avoid rendering surrounding garbage
-const htmlString = html ? `--><style>body{font-size:0}</style><div style=font-size:initial>${await htmlFile.text()}</div><!--` : "";
+  // The ftyp atom is not yet finished, we replace it only to measure offsets
+  await Bun.write(atomFile, ftypBuffer);
+  await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "0.mp4"}" "${tmp + "1.mp4"}"`;
 
-// Create a buffer for the PNG file
-// If applicable, we'll append HTML to this same atom
-const pngFileBuffer = new Uint8Array(pngFile.size + htmlString.length);
-pngFileBuffer.set(await pngFile.bytes());
-if (html) pngFileBuffer.set(encoder.encode(htmlString), pngFile.size);
+  // Wrap the input HTML document (if any) to avoid rendering surrounding garbage
+  const htmlString = html ? `--><style>body{font-size:0}</style><div style=font-size:initial>${await htmlFile.text()}</div><!--` : "";
 
-// Create a "skip" atom to store the PNG data
-const skipBufferHead = new Uint8Array(8);
-skipBufferHead.set(numberTo4bBE(pngFileBuffer.length + 8), 0);
-skipBufferHead.set(encoder.encode("skip"), 4);
+  // Create a buffer for the PNG file
+  // If applicable, we'll append HTML to this same atom
+  const pngFileBuffer = new Uint8Array(pngFile.size + htmlString.length);
+  pngFileBuffer.set(await pngFile.bytes());
+  if (html) pngFileBuffer.set(encoder.encode(htmlString), pngFile.size);
 
-const skipBuffer = new Uint8Array(pngFileBuffer.length + 8);
-skipBuffer.set(skipBufferHead, 0);
-skipBuffer.set(pngFileBuffer, 8);
+  // Create a "skip" atom to store the PNG data
+  const skipBufferHead = new Uint8Array(8);
+  skipBufferHead.set(numberTo4bBE(pngFileBuffer.length + 8), 0);
+  skipBufferHead.set(encoder.encode("skip"), 4);
 
-// Insert the skip atom into the output file to get its final offset
-await Bun.write(atomFile, skipBuffer);
-await $`./mp4edit --insert skip:"${tmp + ".atom"}" "${tmp + "1.mp4"}" "${tmp + "2.mp4"}"`;
+  const skipBuffer = new Uint8Array(pngFileBuffer.length + 8);
+  skipBuffer.set(skipBufferHead, 0);
+  skipBuffer.set(pngFileBuffer, 8);
 
-// Find offset of PNG data in MP4 file
-const offsetReference = await Bun.file(tmp + "2.mp4").bytes();
-const pngOffset = findSubArrayIndex(offsetReference, skipBufferHead) + 8;
+  // Insert the skip atom into the output file to get its final offset
+  await Bun.write(atomFile, skipBuffer);
+  await $`./mp4edit --insert skip:"${tmp + ".atom"}" "${tmp + "1.mp4"}" "${tmp + "2.mp4"}"`;
 
-// Set PNG data offset for first ICO image
-ftypBuffer.set(numberTo4bLE(pngOffset), 18);
-// Set ICO image count to 1 and clear ftyp atom name
-// It seems that, at least for ffmpeg, the name isn't actually required
-ftypBuffer.set([1, 0, 0, 0], 4);
+  // Find offset of PNG data in MP4 file
+  const offsetReference = await Bun.file(tmp + "2.mp4").bytes();
+  const pngOffset = findSubArrayIndex(offsetReference, skipBufferHead) + 8;
 
-// Now the ftyp atom is ready, replace it and write the output file
-await Bun.write(atomFile, ftypBuffer);
-await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
+  // Set PNG data offset for first ICO image
+  ftypBuffer.set(numberTo4bLE(pngOffset), 18);
+  // Set ICO image count to 1 and clear ftyp atom name
+  // It seems that, at least for ffmpeg, the name isn't actually required
+  ftypBuffer.set([1, 0, 0, 0], 4);
 
-if (zip) {
-  // If a ZIP archive was provided, just append it to the end
-  await $`cat "${zip}" >> "${output}"`.quiet();
+  // Now the ftyp atom is ready, replace it and write the output file
+  await Bun.write(atomFile, ftypBuffer);
+  await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
+
+  if (zip) {
+    // If a ZIP archive was provided, just append it to the end
+    await $`cat "${zip}" >> "${output}"`.quiet();
+  }
+
+} catch (e) {
+
+  // Just forward the error, we're not handling it
+  console.error(e);
+
+} finally {
+
+  try {
+    await pngFile.delete();
+    await atomFile.delete();
+
+    await Bun.file(tmp + "0.mp4").delete();
+    await Bun.file(tmp + "1.mp4").delete();
+    await Bun.file(tmp + "2.mp4").delete();
+  } catch { /* Cleanup can fail silently */ }
+
 }
 
-await pngFile.delete();
-await atomFile.delete();
-
-await Bun.file(tmp + "0.mp4").delete();
-await Bun.file(tmp + "1.mp4").delete();
-await Bun.file(tmp + "2.mp4").delete();
