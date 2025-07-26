@@ -174,7 +174,7 @@ try {
   }
 
   // Append any other files found on the command line
-  const appendables = argv.slice(6);
+  const appendables = argv.slice(7);
   for (const path of appendables) {
     if (!path) continue;
     await $`cat "${path}" >> "${output}"`.quiet();
