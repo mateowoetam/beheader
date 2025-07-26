@@ -45,8 +45,8 @@ function numberTo4bBE (num) {
 }
 
 // Finds the index of a sub-array in an array
-function findSubArrayIndex (array, subArray) {
-  for (let i = 0; i <= array.length - subArray.length; i++) {
+function findSubArrayIndex (array, subArray, startIndex = 0) {
+  for (let i = startIndex; i <= array.length - subArray.length; i++) {
     let match = true;
     for (let j = 0; j < subArray.length; j++) {
       if (array[i + j] !== subArray[j]) {
@@ -57,6 +57,12 @@ function findSubArrayIndex (array, subArray) {
     if (match) return i;
   }
   return -1;
+}
+
+// Left-pads a string with specified character up to target length
+function padLeft (str, targetLen, padChar = "0") {
+  str = str.toString();
+  return padChar.repeat(Math.max(0, targetLen - str.length)) + str;
 }
 
 const tmp = Math.random().toString(36).slice(2);
@@ -71,6 +77,7 @@ const pdfFile = pdf && Bun.file(pdf);
 
 const ftypBuffer = new Uint8Array(256);
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 // Wrap in try/catch/finally to clean up temporary files on error
 try {
@@ -163,12 +170,48 @@ try {
   await Bun.write(atomFile, ftypBuffer);
   await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
 
+  const outputFile = Bun.file(output);
+
   if (pdf) {
     // Second PDF pass - close the object and add the real PDF file
     const objectTerminator = encoder.encode("\nendstream\nendobj\n");
-    const pdfBuffer = new Uint8Array(pdfFile.size + objectTerminator.length);
+    const pdfBuffer = new Uint8Array(pdfFile.size + objectTerminator.length + 10);
     pdfBuffer.set(objectTerminator);
     pdfBuffer.set(await pdfFile.bytes(), objectTerminator.length);
+    // Find cross-reference table
+    const xrefStart = findSubArrayIndex(pdfBuffer, encoder.encode("\nxref")) + 1;
+    const offsetStart = findSubArrayIndex(pdfBuffer, encoder.encode("\n0000000000"), xrefStart) + 1;
+    const startxrefStart = findSubArrayIndex(pdfBuffer, encoder.encode("\nstartxref"), xrefStart) + 1;
+    const startxrefEnd = pdfBuffer.indexOf(0x0A, startxrefStart + 11);
+    // Attempt to fix offsets
+    try {
+      if (xrefStart <= 0 || offsetStart <= 0 || startxrefStart <= 0 || startxrefEnd <= 0) {
+        throw "Failed to find xref table";
+      }
+      // Read the xref header (name, index, count) as a string
+      const xrefHeader = decoder.decode(pdfBuffer.slice(xrefStart, offsetStart));
+      // Parse the string to extract the entry count
+      const count = parseInt(xrefHeader.trim().replaceAll("\n", " ").split(" ").pop(), 10);
+      // For all `count` entries, read the offset and increment it
+      let curr = offsetStart;
+      for (let i = 0; i < count; i ++) {
+        const offset = parseInt(decoder.decode(pdfBuffer.slice(curr, curr + 10)).trim(), 10);
+        const newOffset = offset + outputFile.size + objectTerminator.length;
+        pdfBuffer.set(encoder.encode(padLeft(newOffset, 10).slice(0, 10)), curr);
+      }
+      // Adjust startxref offset
+      const startxref = parseInt(decoder.decode(pdfBuffer.slice(startxrefStart + 10, startxrefEnd)).trim(), 10);
+      const newStartxref = (startxref + outputFile.size + objectTerminator.length).toString();
+      pdfBuffer.set(encoder.encode(newStartxref), startxrefStart + 10);
+      // The above operation may overwrite %%EOF, replace it just in case
+      pdfBuffer.set(encoder.encode("\n%%EOF\n"), startxrefStart + 10 + newStartxref.length);
+      for (let i = startxrefStart + newStartxref.length + 17; i < pdfBuffer.length; i ++) {
+        pdfBuffer[i] = 0;
+      }
+    } catch (e) {
+      console.log(e);
+      console.log("WARNING: Failed to fix PDF offsets. This is probably still fine.");
+    }
     // Append this buffer to the output file
     await fs.appendFile(output, pdfBuffer);
   }
