@@ -25,7 +25,7 @@ Notes:
     * Video (and audio) gets re-encoded to MP4, images get converted to PNG in an ICO container.
     * Repeated ZIP files (e.g. \`-z foo.zip -z bar.zip\`) will be re-packed into one file. In case of conflict, files in later archives overwrite previous files.
     * ZIP-like archives are inserted last, after any appendables.
-    * The \`--extra\` data gets inserted at address 44. Input size is not regulated - exceeding ~200 bytes or less may break other components.
+    * The \`--extra\` data gets inserted at address 22. Input size is not regulated - exceeding ~200 bytes or less may break other components.
 `);
 
   process.exit(1);
@@ -209,18 +209,26 @@ try {
   // Luckily, many players just assume that ftyp is the first atom
   ftypBuffer.set([1, 0, 0, 0], 4);
 
-  // Add list of supported brands to help convince stubborn decoders
-  ftypBuffer.set(encoder.encode("__isomiso2avc1mp41"), 22);
-  // Create an HTML comment to help with filtering out garbage
-  ftypBuffer.set(encoder.encode("<!--"), 40);
+  // Write list of real supported brands to help convince stubborn decoders
+  ftypBuffer.set(encoder.encode("isomiso2avc1mp41"), 240);
+
+  // Keep track of the starting address of free space in the ftyp atom
+  let atomFreeAddr = 22;
+
   // Add any user-provided early header data
-  ftypBuffer.set(encoder.encode(extra), 44);
+  ftypBuffer.set(encoder.encode(extra), atomFreeAddr);
+  atomFreeAddr += extra.length;
+  // Create an HTML comment to help with filtering out garbage
+  ftypBuffer.set(encoder.encode("<!--"), 22 + extra.length);
+  atomFreeAddr += 4;
 
   if (pdf) {
     const pdfBuffer = await pdfFile.bytes();
     const mp4Size = Bun.file(tmp + "2.mp4").size;
     // Copy PDF header from input file
-    ftypBuffer.set(pdfBuffer.slice(0, 9), 44 + extra.length);
+    ftypBuffer[atomFreeAddr] = 0x0A;
+    ftypBuffer.set(pdfBuffer.slice(0, 9), atomFreeAddr + 1);
+    atomFreeAddr += 10;
     /**
      * Create a PDF object spanning the whole rest of the MP4.
      *
@@ -239,10 +247,11 @@ try {
     // know that we've subtracted the correct amount.
     do {
       offset --;
-      objString = `\n1 0 obj\n<</Length ${mp4Size - 53 - extra.length - offset}>>\nstream\n`;
+      objString = `\n1 0 obj\n<</Length ${mp4Size - atomFreeAddr - extra.length - offset}>>\nstream\n`;
     } while (offset !== objString.length);
     // Write the string into the dead space of the ftyp atom
-    ftypBuffer.set(encoder.encode(objString), 53 + extra.length);
+    ftypBuffer.set(encoder.encode(objString), atomFreeAddr + extra.length);
+    atomFreeAddr += objString.length;
   }
 
   // Now the ftyp atom is ready, replace it and write the output file

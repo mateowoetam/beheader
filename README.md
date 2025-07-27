@@ -26,7 +26,7 @@ $ bun run beheader.js <output> <image> <video|audio> [-options] [appendable...]
 **Technical notes:**
 1. The merging process is not necessarily lossless. Video (or audio) gets re-encoded to MP4, images get converted to PNG (in an ICO container), HTML is coupled with a stylesheet, PDF offsets are adjusted, and ZIP archives get re-packed.
 2. There are many other file formats that use the ZIP structure under the hood. Popular examples include JAR, APK, PPTX, DOCX, XLSX, and a few others. Note that "appendables" are inserted *before* any ZIPs.
-3. The \`--extra\` data gets inserted at address 44. Input size is not regulated - exceeding ~200 bytes (or less!) may break other components.
+3. The \`--extra\` data gets inserted at address 22. Input size is not regulated - exceeding ~200 bytes (or less!) may break other components.
 
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
 - `.ico` displays the input image;
