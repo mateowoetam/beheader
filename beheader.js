@@ -1,28 +1,79 @@
 const { $ } = require("bun");
 const fs = require("fs/promises");
 
+function printHelpAndExit () {
+
+  console.log(`\
+Usage: beheader <output> <image> <video|audio> [-options] [appendable...]
+
+Polyglot generator for media files.
+
+Arguments:
+    output               Path of resulting polyglot file
+    image                Path of input image file
+    video|audio          Path of input video (or audio) file
+    appendable           Path(s) of files to append without parsing
+
+Options:
+    -h, --html <path>    Path to HTML document
+    -p, --pdf <path>     Path to PDF document
+    -z, --zip <path>     Path to ZIP-like archive (repeatable)
+    -e, --extra <path>   Path to short (<200b) file to include near the header
+    --help               Print this help message and exit
+
+Notes:
+    * Video (and audio) gets re-encoded to MP4, images get converted to PNG in an ICO container.
+    * Repeated ZIP files (e.g. \`-z foo.zip -z bar.zip\`) will be re-packed into one file. In case of conflict, files in later archives overwrite previous files.
+    * ZIP-like archives are inserted last, after any appendables.
+    * The \`--extra\` data gets inserted at address 44. Input size is not regulated - exceeding ~200 bytes or less may break other components.
+`);
+
+  process.exit(1);
+
+}
+
 // Parse command line by cloning argv and removing flags first
 const argv = structuredClone(process.argv);
 
 let extra = "";
+let html, pdf, zip = [];
 
 // Search for supported flags, handle them, and remove them from argv clone
 for (let i = argv.length - 1; i >= 0; i --) {
   let match = true;
   switch (argv[i]) {
-    case "--extra": extra = await Bun.file(argv[i + 1]).text(); break;
+
+    case "--help":
+      printHelpAndExit();
+      break;
+
+    case "--html": case "-h":
+      html = argv[i + 1];
+      break;
+
+    case "--pdf": case "-p":
+      pdf = argv[i + 1];
+      break;
+
+    case "--zip": case "-z":
+      zip.push(argv[i + 1]);
+      break;
+
+    case "--extra": case "-e":
+      extra = await Bun.file(argv[i + 1]).text();
+      break;
+
     default: match = false; break;
   }
   if (match) argv.splice(i, 2);
 }
 
-// All remaining parameters are positional
-const [ output, image, video, html, pdf ] = argv.slice(2);
+// Handle mandatory arguments
+const [output, image, video] = argv.slice(2);
+if (!output) printHelpAndExit();
 
-if (!output || !image || !video) {
-  console.log("Usage: bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...]");
-  process.exit(1);
-}
+// Treat remaining arguments as appendable binaries
+const appendables = argv.slice(5);
 
 // Converts a number to a 4-byte little-endian uint8 buffer
 function numberTo4bLE (num) {
@@ -91,8 +142,12 @@ try {
   ftypBuffer[12] = 32; // First image bit depth
   ftypBuffer.set(numberTo4bLE(pngFile.size), 14); // Image data size
 
-  // Re-encode input video to a highly normalized MP4
-  await $`ffmpeg -i "${video}" -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4 "${tmp + "0.mp4"}"`.quiet();
+  const streamProbe = await $`ffprobe -v error -select_streams v -show_entries stream=codec_type -of json "${video}"`.quiet();
+  const isVideo = !!JSON.parse(streamProbe.stdout.toString()).streams.length;
+
+  // Re-encode input video to a highly normalized MP4 (or M4A)
+  if (isVideo) await $`ffmpeg -i "${video}" -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4 "${tmp + "0.mp4"}"`.quiet();
+  else await $`ffmpeg -i "${video}" -c:a aac -b:a 192k "${tmp + "0.mp4"}"`.quiet();
 
   // The ftyp atom is not yet finished, we replace it only to measure offsets
   await Bun.write(atomFile, ftypBuffer);
@@ -217,19 +272,30 @@ try {
   }
 
   // Append any other files found on the command line
-  const appendables = argv.slice(7);
   for (const path of appendables) {
     if (!path) continue;
     await $`cat "${path}" >> "${output}"`.quiet();
   }
 
-  // Fix ZIP offsets (if applicable) to improve compatibility
-  await $`zip -A "${output}"`.quiet();
+  if (zip.length > 0) {
+    // Extract all ZIP-like archives to a temporary directory
+    await fs.mkdir(tmp + "dir");
+    for (const curr of zip) {
+      await $`unzip -d "${tmp}dir" "${curr}"`.quiet();
+    }
+    // Create archive from temporary directory
+    await $`cd "${tmp}dir" && zip -r9 "../${tmp + ".zip"}" .`.quiet();
+    // Append the ZIP file as-is to the end of the file
+    await $`cat "${tmp + ".zip"}" >> "${output}"`.quiet();
+    // Apply self-extracting archive offset fix for better compatibility
+    await $`zip -A "${output}"`.quiet();
+  }
 
 } catch (e) {
 
   // Just forward the error, we're not handling it
   console.error(e);
+  if ("stderr" in e) console.log(e.stderr.toString());
 
 } finally {
 
@@ -240,6 +306,13 @@ try {
     await Bun.file(tmp + "0.mp4").delete();
     await Bun.file(tmp + "1.mp4").delete();
     await Bun.file(tmp + "2.mp4").delete();
+
+    if (await fs.exists(tmp + "dir")) {
+      await fs.rm(tmp + "dir", { recursive: true, force: true });
+    }
+    if (await fs.exists(tmp + ".zip")) {
+      await fs.rm(tmp + ".zip", { force: true });
+    }
   } catch { /* Cleanup can fail silently */ }
 
 }

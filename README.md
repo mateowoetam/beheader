@@ -2,24 +2,31 @@
 Polyglot generator for media files.
 
 ### Dependencies
-This project requires the [Bun JavaScript runtime](https://bun.sh/), and is built for Linux systems. You'll need `ffmpeg`, `imagemagick`, and `zip` in your `PATH`, as well as an executable [mp4edit](https://www.bento4.com/) binary in your working directory.
+This project requires the [Bun JavaScript runtime](https://bun.sh/), and is built for Linux systems. You'll need `ffmpeg`, `ffprobe`, ImageMagick's `convert`, `zip`, and `unzip` in your `PATH`, as well as an executable [mp4edit](https://www.bento4.com/) binary in your working directory.
 
 ### Usage
 With all dependencies set up, you should be able to run:
 ```
-$ bun run beheader.js <output> <image> <video> [html] [pdf] [zip|jar|apk|...] [--extra bin]
+$ bun run beheader.js <output> <image> <video|audio> [-options] [appendable...]
 ```
-- `output` is the name of the output polyglot file.
-- `image` is a path to the image to include. Note that regardless of what you provide, it will be converted to a PNG using ImageMagick.
-- `video` is a path to the video file to include. This will be transcoded to MP4 using FFmpeg.
-- `html` is an *optional* path to an HTML document. The code will be wrapped to prevent rendering garbage.
-- `pdf` is an *optional* path to a PDF document.
 
-Further files will simply be appended to the output. Most notably, this works well for ZIP-like archives and some scripts. For ZIP archives, offsets will be adjusted to improve compatibility. **ZIP-like files should be included last**, to prevent the offset adjustment from breaking other appendables.
+**Positional arguments:**
+- `output` - Path of resulting polyglot file.
+- `image` - Path of input image file.
+- `video|audio` - Path of input video (or audio) file.
+- `appendable` - Path(s) of files to append without parsing.
 
-To avoid including an optional file, omit the argument or use an empty string (`""`) in its place.
+**Optional flags:**
+- `-h` (or `--html`) `<path>` - Path to HTML document.
+- `-p` (or `--pdf`) `<path>` - Path to PDF document.
+- `-z` (or `--zip`) `<path>` -  Path to ZIP-like archive. Can be repeated to merge multiple ZIPs.
+- `-e` (or `--extra`) `<path>` - Path to short (<200 byte) file to include near the header.
+- `--help` - Print usage guide and exit.
 
-The `--extra` flag is not positional. It can be used to add a short file (about 200 bytes or less, depending on input) to the first MP4 atom near the start of the output file. **The size of this data is not regulated.** Overflowing the atom will break the video component of the output.
+**Technical notes:**
+1. The merging process is not necessarily lossless. Video (or audio) gets re-encoded to MP4, images get converted to PNG (in an ICO container), HTML is coupled with a stylesheet, PDF offsets are adjusted, and ZIP archives get re-packed.
+2. There are many other file formats that use the ZIP structure under the hood. Popular examples include JAR, APK, PPTX, DOCX, XLSX, and a few others. Note that "appendables" are inserted *before* any ZIPs.
+3. The \`--extra\` data gets inserted at address 44. Input size is not regulated - exceeding ~200 bytes (or less!) may break other components.
 
 The output file will be a polyglot of all of its inputs. On most systems, it will change behavior depending on its file extension:
 - `.ico` displays the input image;
