@@ -126,18 +126,44 @@ const atomFile = Bun.file(tmp + ".atom");
 const htmlFile = html && Bun.file(html);
 const pdfFile = pdf && Bun.file(pdf);
 
-const ftypBuffer = new Uint8Array(256);
+const ftypBuffer = new Uint8Array(256 + 32);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 // Wrap in try/catch/finally to clean up temporary files on error
 try {
 
-  ftypBuffer[2] = 1; // ICO signature | 256 byte atom size
+  // ICO signature, doubling in purpose to set a 256 byte atom size
+  ftypBuffer[2] = 1;
 
   // Write the MP4 "ftyp" atom name
-  // This seems unnecessary, we do this just to not confuse mp4edit
   ftypBuffer.set(encoder.encode("ftyp"), 4);
+
+  /**
+   * This whole procedure eventually clears the atom name, but some
+   * players (looking at you, VLC) *do* need a named ftyp atom to
+   * identify an MP4 video file.
+   *
+   * To work around this, we extend the size of this atom by 32 bytes,
+   * which is enough to write the data for another ftyp atom at the
+   * bottom. Later, we will clear this byte, which will effectively
+   * split those last 32 bytes off of this atom, forming a new atom.
+   *
+   * The more careful players will ignore our first unnamed atom,
+   * and move onto this next "proper" ftyp atom. Less careful players
+   * won't care about a duplicate. This bithack is actually easier
+   * than coercing mp4edit to create an early ftyp duplicate.
+   *
+   * Unfortunately, this still doesn't fix VLC. It needs ftyp to be
+   * within the first 256 bytes, which we simply can't do.
+   */
+  ftypBuffer[3] = 32;
+  ftypBuffer.set([ // Standard MP4 "header" data
+    0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70,
+    0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02, 0x00,
+    0x69, 0x73, 0x6f, 0x6d, 0x69, 0x73, 0x6f, 0x32,
+    0x61, 0x76, 0x63, 0x31, 0x6d, 0x70, 0x34, 0x31,
+  ], 256);
 
   ftypBuffer[12] = 32; // First image bit depth
   ftypBuffer.set(numberTo4bLE(pngFile.size), 14); // Image data size
@@ -225,7 +251,10 @@ try {
   await Bun.write(atomFile, ftypBuffer);
   await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
 
-  const outputFile = Bun.file(output);
+  // Fix earlier bithack, splitting off the extra ftyp atom
+  const outputfd = await fs.open(output, "r+");
+  await outputfd.write(Buffer.from([0]), 0, 1, 3);
+  await outputfd.close();
 
   if (pdf) {
     // Second PDF pass - close the object and add the real PDF file
@@ -243,6 +272,7 @@ try {
       if (xrefStart <= 0 || offsetStart <= 0 || startxrefStart <= 0 || startxrefEnd <= 0) {
         throw "Failed to find xref table";
       }
+      const outputFile = Bun.file(output);
       // Read the xref header (name, index, count) as a string
       const xrefHeader = decoder.decode(pdfBuffer.slice(xrefStart, offsetStart));
       // Parse the string to extract the entry count
