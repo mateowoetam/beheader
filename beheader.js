@@ -224,6 +224,7 @@ try {
   atomFreeAddr += 4;
 
   if (pdf) {
+    // First PDF pass - create an early header and wrap MP4 in a PDF object
     const pdfBuffer = await pdfFile.bytes();
     const mp4Size = Bun.file(tmp + "2.mp4").size;
     // Copy PDF header from input file
