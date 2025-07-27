@@ -184,8 +184,9 @@ try {
 
   // Create a "skip" atom to store the PNG (and HTML) data
   const skipBufferData = new Uint8Array(pngFile.size + htmlString.length);
-  skipBufferData.set(await pngFile.bytes());
-  if (html) skipBufferData.set(encoder.encode(htmlString), pngFile.size);
+  // If applicable, HTML is inserted first to reduce browser loading time
+  if (html) skipBufferData.set(encoder.encode(htmlString));
+  skipBufferData.set(await pngFile.bytes(), htmlString.length);
 
   const skipBufferHead = new Uint8Array(8);
   skipBufferHead.set(numberTo4bBE(skipBufferData.length + 8), 0);
@@ -201,7 +202,7 @@ try {
 
   // Find offset of PNG data in MP4 file
   const offsetReference = await Bun.file(tmp + "2.mp4").bytes();
-  const pngOffset = findSubArrayIndex(offsetReference, skipBufferHead) + 8;
+  const pngOffset = findSubArrayIndex(offsetReference, skipBufferHead) + 8 + htmlString.length;
 
   // Set PNG data offset for first ICO image
   ftypBuffer.set(numberTo4bLE(pngOffset), 18);
