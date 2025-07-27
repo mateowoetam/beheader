@@ -182,20 +182,18 @@ try {
   // Wrap the input HTML document (if any) to avoid rendering surrounding garbage
   const htmlString = html ? `--><style>body{font-size:0}</style><div style=font-size:initial>${await htmlFile.text()}</div><!--` : "";
 
-  // Create a buffer for the PNG file
-  // If applicable, we'll append HTML to this same atom
-  const pngFileBuffer = new Uint8Array(pngFile.size + htmlString.length);
-  pngFileBuffer.set(await pngFile.bytes());
-  if (html) pngFileBuffer.set(encoder.encode(htmlString), pngFile.size);
+  // Create a "skip" atom to store the PNG (and HTML) data
+  const skipBufferData = new Uint8Array(pngFile.size + htmlString.length);
+  skipBufferData.set(await pngFile.bytes());
+  if (html) skipBufferData.set(encoder.encode(htmlString), pngFile.size);
 
-  // Create a "skip" atom to store the PNG data
   const skipBufferHead = new Uint8Array(8);
-  skipBufferHead.set(numberTo4bBE(pngFileBuffer.length + 8), 0);
+  skipBufferHead.set(numberTo4bBE(skipBufferData.length + 8), 0);
   skipBufferHead.set(encoder.encode("skip"), 4);
 
-  const skipBuffer = new Uint8Array(pngFileBuffer.length + 8);
+  const skipBuffer = new Uint8Array(skipBufferData.length + 8);
   skipBuffer.set(skipBufferHead, 0);
-  skipBuffer.set(pngFileBuffer, 8);
+  skipBuffer.set(skipBufferData, 8);
 
   // Insert the skip atom into the output file to get its final offset
   await Bun.write(atomFile, skipBuffer);
