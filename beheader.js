@@ -292,6 +292,7 @@ try {
         const offset = parseInt(decoder.decode(pdfBuffer.slice(curr, curr + 10)).trim(), 10);
         const newOffset = offset + outputFile.size + objectTerminator.length;
         pdfBuffer.set(encoder.encode(padLeft(newOffset, 10).slice(0, 10)), curr);
+        curr = pdfBuffer.indexOf(0x0A, curr + 1) + 1;
       }
       // Adjust startxref offset
       const startxref = parseInt(decoder.decode(pdfBuffer.slice(startxrefStart + 10, startxrefEnd)).trim(), 10);
