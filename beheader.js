@@ -119,7 +119,7 @@ function padLeft (str, targetLen, padChar = "0") {
 const tmp = Math.random().toString(36).slice(2);
 
 // Convert input image to 32 bpp PNG, strip all metadata
-await $`convert "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "${tmp + ".png"}"`;
+await $`magick "${image}" -define png:color-type=6 -depth 8 -alpha on -strip "${tmp + ".png"}"`;
 
 const pngFile = Bun.file(tmp + ".png");
 const atomFile = Bun.file(tmp + ".atom");
@@ -177,7 +177,7 @@ try {
 
   // The ftyp atom is not yet finished, we replace it only to measure offsets
   await Bun.write(atomFile, ftypBuffer);
-  await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "0.mp4"}" "${tmp + "1.mp4"}"`;
+  await $`mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "0.mp4"}" "${tmp + "1.mp4"}"`;
 
   // Wrap the input HTML document (if any) to avoid rendering surrounding garbage
   const htmlString = html ? `--><style>body{font-size:0}</style><div style=font-size:initial>${await htmlFile.text()}</div><!--` : "";
@@ -198,7 +198,7 @@ try {
 
   // Insert the skip atom into the output file to get its final offset
   await Bun.write(atomFile, skipBuffer);
-  await $`./mp4edit --insert skip:"${tmp + ".atom"}" "${tmp + "1.mp4"}" "${tmp + "2.mp4"}"`;
+  await $`mp4edit --insert skip:"${tmp + ".atom"}" "${tmp + "1.mp4"}" "${tmp + "2.mp4"}"`;
 
   // Find offset of PNG data in MP4 file
   const offsetReference = await Bun.file(tmp + "2.mp4").bytes();
@@ -258,7 +258,7 @@ try {
 
   // Now the ftyp atom is ready, replace it and write the output file
   await Bun.write(atomFile, ftypBuffer);
-  await $`./mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
+  await $`mp4edit --replace ftyp:"${tmp + ".atom"}" "${tmp + "2.mp4"}" "${output}"`;
 
   // Fix earlier bithack, splitting off the extra ftyp atom
   const outputfd = await fs.open(output, "r+");
@@ -356,4 +356,3 @@ try {
   } catch { /* Cleanup can fail silently */ }
 
 }
-
